@@ -41,7 +41,7 @@ export async function setCache<T>(key: string, value: T, ttl?: number): Promise<
       await redis.set(key, JSON.stringify(value))
     }
     
-    console.log(`✅ Cache saved: ${key}${ttl ? ` (TTL: ${ttl}s)` : ''}`)
+    // 성공 로그 제거 (너무 많음)
   } catch (error) {
     console.error(`❌ Cache save failed: ${key}`, error)
     throw error

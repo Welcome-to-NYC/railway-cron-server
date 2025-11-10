@@ -3,11 +3,8 @@
  * 5분마다 전체 주식 가격을 갱신하여 Vercel KV에 저장
  */
 
+import { getCache, setCache } from '../lib/redis'
 import { getAccessToken } from '../services/kis-token'
-import { setCache, getCache } from '../lib/redis'
-import { parse } from 'csv-parse/sync'
-import * as fs from 'fs'
-import * as path from 'path'
 
 // 타입 정의
 interface StockPrice {
@@ -132,35 +129,32 @@ export async function updateStockPrices(): Promise<void> {
   } finally {
     // Lock 해제
     await setCache(lockKey, false, 1)
-    console.log('🔓 주식 가격 갱신 Lock 해제')
+    console.log('주식 가격 갱신 Lock 해제')
   }
 }
 
 /**
- * CSV에서 종목 코드 가져오기
+ * Redis에서 종목 코드 가져오기 (KRX API로 매일 갱신됨)
  */
 async function getStockCodes(): Promise<string[]> {
   try {
-    // CSV 파일 경로 (data 폴더에 복사 필요)
-    const csvPath = path.join(__dirname, '../../data/merged_data_20251031.csv')
+    interface StockInfo {
+      code: string
+      name: string
+      market: string
+    }
     
-    if (!fs.existsSync(csvPath)) {
-      throw new Error(`CSV 파일을 찾을 수 없습니다: ${csvPath}`)
+    const stockList = await getCache<StockInfo[]>('stock-list')
+    
+    if (!stockList || stockList.length === 0) {
+      throw new Error('종목 리스트가 없습니다. stock-list Cron이 실행되었는지 확인하세요.')
     }
 
-    const fileContent = fs.readFileSync(csvPath, 'utf-8')
-    const records = parse(fileContent, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-    })
-
-    const codes = records.map((record: any) => record.code).filter(Boolean)
-    console.log(`✅ CSV에서 ${codes.length}개 종목 로드 완료`)
+    const codes = stockList.map(stock => stock.code)
+    console.log(`종목 리스트 로드 완료: ${codes.length}개`)
     return codes
-
   } catch (error) {
-    console.error('❌ CSV 로드 실패:', error)
+    console.error('종목 리스트 로드 실패:', error)
     throw error
   }
 }

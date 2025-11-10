@@ -8,6 +8,7 @@ import cron from 'node-cron'
 import dotenv from 'dotenv'
 import { updateStockPrices } from './cron/stocks'
 import { updateCoinPrices } from './cron/coins'
+import { updateStockList } from './cron/stock-list'
 
 // 환경 변수 로드
 dotenv.config()
@@ -57,9 +58,18 @@ Cron Jobs:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   `)
 
-  // 토큰 사전 발급: 매일 08:00 (KST 기준으로 개장 전)
+  // 종목 리스트 갱신: 매일 00:00 KST (UTC 15:00)
+  cron.schedule('0 15 * * *', async () => {
+    console.log(`\n[${new Date().toISOString()}] 📋 종목 리스트 갱신`)
+    try {
+      await updateStockList()
+    } catch (error) {
+      console.error('종목 리스트 갱신 에러:', error)
+    }
+  })
+  
+  // 토큰 사전 발급: 매일 08:00 KST (UTC 23:00)
   cron.schedule('0 23 * * *', async () => {
-    // UTC 23:00 = KST 08:00 (다음날)
     console.log(`\n[${new Date().toISOString()}] 🔑 한투 토큰 사전 발급`)
     try {
       const { getAccessToken } = await import('./services/kis-token')

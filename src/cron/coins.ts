@@ -7,7 +7,6 @@
 import { setCache, getCache } from '../lib/redis'
 
 const UPBIT_API_BASE_URL = 'https://api.upbit.com/v1'
-const TIME_INTERVALS = ['1h', '24h', '7d', '30d'] as const
 const RATE_LIMIT_PER_SECOND = 8 // 초당 8회 (안전 마진)
 
 /**
@@ -55,18 +54,17 @@ export async function updateCoinPrices(): Promise<void> {
     // 3️⃣ Candles - 배치 병렬 처리 (초당 8개씩)
     let successCount = 0
     let failedCount = 0
-    const failedRequests: Array<{ market: string; interval: string }> = []
+    const failedRequests: Array<{ market: string; type: '1h' | 'days' }> = []
     
-    // 모든 요청 목록 생성
-    const allRequests: Array<{ market: string; interval: string }> = []
+    // 모든 요청 목록 생성 (최적화: 1h + days만)
+    const allRequests: Array<{ market: string; type: '1h' | 'days' }> = []
     for (const market of krwMarkets) {
-      for (const interval of TIME_INTERVALS) {
-        allRequests.push({ market, interval })
-      }
+      allRequests.push({ market, type: '1h' })    // 1시간
+      allRequests.push({ market, type: 'days' })  // 24h/7d/30d 통합
     }
     
     const totalBatches = Math.ceil(allRequests.length / RATE_LIMIT_PER_SECOND)
-    console.log(`📊 ${allRequests.length}개 요청 → ${totalBatches}개 배치 (예상: ${totalBatches}초)`)
+    console.log(`📊 ${allRequests.length}개 요청 → ${totalBatches}개 배치 (예상: ${totalBatches}초, 50% 최적화!)`)
     
     // 초당 8개씩 배치 처리 (스마트 대기)
     for (let i = 0; i < allRequests.length; i += RATE_LIMIT_PER_SECOND) {
@@ -75,28 +73,38 @@ export async function updateCoinPrices(): Promise<void> {
       
       // 배치 내 병렬 처리
       const results = await Promise.allSettled(
-        batch.map(async ({ market, interval }) => {
+        batch.map(async ({ market, type }) => {
           try {
-            const candleData = await fetchCandleData(market, interval)
-            
-            if (candleData) {
-              await setCache(
-                `upbit-candles:${market}:${interval}`,
-                candleData,
-                200
-              )
-              return { success: true }
+            if (type === '1h') {
+              // 1h: 개별 처리
+              const candleData = await fetchCandleData(market, '1h')
+              if (candleData) {
+                await setCache(`upbit-candles:${market}:1h`, candleData, 200)
+                return { success: true, count: 1 }
+              } else {
+                failedRequests.push({ market, type })
+                return { success: false, count: 0 }
+              }
             } else {
-              failedRequests.push({ market, interval })
-              return { success: false }
+              // days: 한번 호출로 24h, 7d, 30d 계산
+              const daysData = await fetchDaysData(market)
+              if (daysData) {
+                await setCache(`upbit-candles:${market}:24h`, daysData['24h'], 200)
+                await setCache(`upbit-candles:${market}:7d`, daysData['7d'], 200)
+                await setCache(`upbit-candles:${market}:30d`, daysData['30d'], 200)
+                return { success: true, count: 3 }
+              } else {
+                failedRequests.push({ market, type })
+                return { success: false, count: 0 }
+              }
             }
           } catch (error: any) {
             if (error.message?.includes('429')) {
-              failedRequests.push({ market, interval })
+              failedRequests.push({ market, type })
             } else {
-              console.error(`❌ ${market} ${interval}: ${error.message}`)
+              console.error(`❌ ${market} ${type}: ${error.message}`)
             }
-            return { success: false }
+            return { success: false, count: 0 }
           }
         })
       )
@@ -132,21 +140,26 @@ export async function updateCoinPrices(): Promise<void> {
         const retryBatch = failedRequests.slice(i, i + RATE_LIMIT_PER_SECOND)
         
         const retryResults = await Promise.allSettled(
-          retryBatch.map(async ({ market, interval }) => {
+          retryBatch.map(async ({ market, type }) => {
             try {
-              const candleData = await fetchCandleData(market, interval)
-              
-              if (candleData) {
-                await setCache(
-                  `upbit-candles:${market}:${interval}`,
-                  candleData,
-                  200
-                )
-                return { success: true }
+              if (type === '1h') {
+                const candleData = await fetchCandleData(market, '1h')
+                if (candleData) {
+                  await setCache(`upbit-candles:${market}:1h`, candleData, 200)
+                  return { success: true }
+                }
+              } else {
+                const daysData = await fetchDaysData(market)
+                if (daysData) {
+                  await setCache(`upbit-candles:${market}:24h`, daysData['24h'], 200)
+                  await setCache(`upbit-candles:${market}:7d`, daysData['7d'], 200)
+                  await setCache(`upbit-candles:${market}:30d`, daysData['30d'], 200)
+                  return { success: true }
+                }
               }
               return { success: false }
             } catch (error: any) {
-              console.warn(`⚠️ ${market} ${interval} 재시도 실패`)
+              console.warn(`⚠️ ${market} ${type} 재시도 실패`)
               return { success: false }
             }
           })
@@ -186,7 +199,7 @@ export async function updateCoinPrices(): Promise<void> {
 }
 
 /**
- * Candle 데이터 조회 및 등락률 계산
+ * Candle 데이터 조회 및 등락률 계산 (1h용)
  */
 async function fetchCandleData(market: string, interval: string): Promise<any> {
   try {
@@ -233,6 +246,109 @@ async function fetchCandleData(market: string, interval: string): Promise<any> {
         candles: candles.slice(0, 5)
       },
       timestamp: Date.now()
+    }
+
+  } catch (error: any) {
+    if (error.message?.includes('429')) {
+      throw error
+    }
+    throw error
+  }
+}
+
+/**
+ * Days 데이터 한번에 조회하여 24h, 7d, 30d 계산 (최적화)
+ */
+async function fetchDaysData(market: string): Promise<any> {
+  try {
+    // 31일치 한번에 조회
+    const response = await fetch(
+      `${UPBIT_API_BASE_URL}/candles/days?market=${market}&count=31`
+    )
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new Error('HTTP 429 - Rate Limit')
+      }
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const candles: any = await response.json()
+
+    if (candles.length < 2) {
+      const defaultData = {
+        success: true,
+        data: {
+          market,
+          currentPrice: candles[0]?.trade_price || 0,
+          changeRate: 0
+        }
+      }
+      return {
+        '24h': { ...defaultData, data: { ...defaultData.data, interval: '24h' } },
+        '7d': { ...defaultData, data: { ...defaultData.data, interval: '7d' } },
+        '30d': { ...defaultData, data: { ...defaultData.data, interval: '30d' } }
+      }
+    }
+
+    const currentCandle = candles[0]
+    const currentPrice = currentCandle.trade_price
+
+    // 24h 계산 (candles[0] vs candles[1])
+    const calc24h = (candles.length > 1) 
+      ? (currentPrice - candles[1].opening_price) / candles[1].opening_price 
+      : 0
+
+    // 7d 계산 (candles[0] vs candles[7])
+    const calc7d = (candles.length > 7) 
+      ? (currentPrice - candles[7].opening_price) / candles[7].opening_price 
+      : 0
+
+    // 30d 계산 (candles[0] vs candles[30])
+    const calc30d = (candles.length > 30) 
+      ? (currentPrice - candles[30].opening_price) / candles[30].opening_price 
+      : 0
+
+    return {
+      '24h': {
+        success: true,
+        data: {
+          market,
+          interval: '24h',
+          currentPrice,
+          previousPrice: candles[1]?.opening_price || currentPrice,
+          changeRate: calc24h,
+          changePercent: calc24h * 100,
+          candles: candles.slice(0, 5)
+        },
+        timestamp: Date.now()
+      },
+      '7d': {
+        success: true,
+        data: {
+          market,
+          interval: '7d',
+          currentPrice,
+          previousPrice: candles[7]?.opening_price || currentPrice,
+          changeRate: calc7d,
+          changePercent: calc7d * 100,
+          candles: candles.slice(0, 5)
+        },
+        timestamp: Date.now()
+      },
+      '30d': {
+        success: true,
+        data: {
+          market,
+          interval: '30d',
+          currentPrice,
+          previousPrice: candles[30]?.opening_price || currentPrice,
+          changeRate: calc30d,
+          changePercent: calc30d * 100,
+          candles: candles.slice(0, 5)
+        },
+        timestamp: Date.now()
+      }
     }
 
   } catch (error: any) {

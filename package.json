@@ -1,0 +1,32 @@
+{
+  "name": "railway-cron-server",
+  "version": "1.0.0",
+  "description": "Railway Cron Server for Stock and Coin Data Updates",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "echo \"No tests yet\""
+  },
+  "keywords": ["cron", "railway", "stocks", "coins"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "@vercel/kv": "^1.0.1",
+    "dotenv": "^16.3.1",
+    "csv-parse": "^5.5.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.5",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

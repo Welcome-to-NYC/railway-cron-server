@@ -32,7 +32,7 @@ export async function updateCoinPrices(): Promise<void> {
   try {
     // 1️⃣ 전체 마켓 리스트 가져오기
     const marketsResponse = await fetch(`${UPBIT_API_BASE_URL}/market/all`)
-    const allMarkets = await marketsResponse.json()
+    const allMarkets: any = await marketsResponse.json()
     
     // KRW 마켓만 필터링
     const krwMarkets: string[] = allMarkets
@@ -45,7 +45,7 @@ export async function updateCoinPrices(): Promise<void> {
     const tickerResponse = await fetch(
       `${UPBIT_API_BASE_URL}/ticker?markets=${krwMarkets.join(',')}`
     )
-    const tickers = await tickerResponse.json()
+    const tickers: any = await tickerResponse.json()
     
     // Ticker 캐시 저장
     for (const ticker of tickers) {
@@ -203,7 +203,7 @@ async function fetchCandleData(market: string, interval: string): Promise<any> {
       throw new Error(`HTTP ${response.status}`)
     }
 
-    const candles = await response.json()
+    const candles: any = await response.json()
 
     if (candles.length < 2) {
       return {

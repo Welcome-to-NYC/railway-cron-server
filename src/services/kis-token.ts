@@ -60,7 +60,7 @@ export async function getAccessToken(): Promise<string | null> {
       throw new Error(`HTTP ${response.status}`)
     }
 
-    const data = await response.json()
+    const data: any = await response.json()
     
     if (!data.access_token) {
       console.error('❌ 토큰 없음:', data)

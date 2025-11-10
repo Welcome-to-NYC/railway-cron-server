@@ -339,7 +339,7 @@ async function fetchSinglePrice(code: string, token: string): Promise<StockPrice
     }
   )
 
-  const data = await response.json()
+  const data: any = await response.json()
   
   if (!response.ok) {
     const msgCode = data.msg_cd || 'UNKNOWN'

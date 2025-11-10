@@ -1,26 +1,46 @@
 /**
- * Vercel KV (Redis) 클라이언트
- * Railway 서버에서 Vercel KV에 연결
+ * Redis 클라이언트 (ioredis)
+ * Railway 서버에서 Redis에 연결
  */
 
-import { createClient } from '@vercel/kv'
+import Redis from 'ioredis'
 
-// Vercel KV 클라이언트 생성
-export const kv = createClient({
-  url: process.env.KV_REST_API_URL!,
-  token: process.env.KV_REST_API_TOKEN!,
-})
+// Redis 클라이언트 (싱글톤)
+let redisClient: Redis | null = null
+
+function getRedisClient(): Redis {
+  if (!redisClient) {
+    if (!process.env.REDIS_URL) {
+      throw new Error('REDIS_URL 환경 변수가 설정되지 않았습니다')
+    }
+    
+    redisClient = new Redis(process.env.REDIS_URL, {
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => {
+        if (times > 3) return null
+        return Math.min(times * 200, 1000)
+      }
+    })
+    
+    console.log('✅ Redis 클라이언트 연결 완료')
+  }
+  
+  return redisClient
+}
 
 /**
  * 캐시 저장
  */
 export async function setCache<T>(key: string, value: T, ttl?: number): Promise<void> {
   try {
+    const redis = getRedisClient()
+    
     if (ttl) {
-      await kv.set(key, JSON.stringify(value), { ex: ttl })
+      await redis.setex(key, ttl, JSON.stringify(value))
     } else {
-      await kv.set(key, JSON.stringify(value))
+      await redis.set(key, JSON.stringify(value))
     }
+    
     console.log(`✅ Cache saved: ${key}${ttl ? ` (TTL: ${ttl}s)` : ''}`)
   } catch (error) {
     console.error(`❌ Cache save failed: ${key}`, error)
@@ -33,8 +53,11 @@ export async function setCache<T>(key: string, value: T, ttl?: number): Promise<
  */
 export async function getCache<T>(key: string): Promise<T | null> {
   try {
-    const data = await kv.get<string>(key)
+    const redis = getRedisClient()
+    const data = await redis.get(key)
+    
     if (!data) return null
+    
     return JSON.parse(data) as T
   } catch (error) {
     console.error(`❌ Cache read failed: ${key}`, error)
@@ -47,7 +70,8 @@ export async function getCache<T>(key: string): Promise<T | null> {
  */
 export async function deleteCache(key: string): Promise<void> {
   try {
-    await kv.del(key)
+    const redis = getRedisClient()
+    await redis.del(key)
     console.log(`🗑️ Cache deleted: ${key}`)
   } catch (error) {
     console.error(`❌ Cache delete failed: ${key}`, error)
@@ -59,7 +83,8 @@ export async function deleteCache(key: string): Promise<void> {
  */
 export async function hasCache(key: string): Promise<boolean> {
   try {
-    const exists = await kv.exists(key)
+    const redis = getRedisClient()
+    const exists = await redis.exists(key)
     return exists === 1
   } catch (error) {
     console.error(`❌ Cache exists check failed: ${key}`, error)

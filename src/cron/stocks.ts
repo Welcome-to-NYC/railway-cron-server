@@ -56,10 +56,46 @@ const DELAY_BETWEEN_REQUESTS = 67 // 67ms = 초당 15개
 const CACHE_UPDATE_CHUNK = 100
 
 /**
+ * 장 개장 시간 체크 (한국 시간)
+ * 월~금 08:30-16:00 (보수적)
+ */
+function isMarketOpen(): boolean {
+  const now = new Date()
+  const kstTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+  
+  const day = kstTime.getDay() // 0=일요일, 6=토요일
+  const hour = kstTime.getHours()
+  const minute = kstTime.getMinutes()
+  
+  // 주말 체크
+  if (day === 0 || day === 6) {
+    return false
+  }
+  
+  // 평일 시간 체크: 08:30-16:00
+  if (hour < 8 || hour > 16) {
+    return false
+  }
+  if (hour === 8 && minute < 30) {
+    return false
+  }
+  
+  return true
+}
+
+/**
  * 주식 가격 갱신 메인 함수
  */
 export async function updateStockPrices(): Promise<void> {
   const startTime = Date.now()
+  
+  // 🕐 장 개장 시간 체크
+  if (!isMarketOpen()) {
+    const now = new Date()
+    const kstTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+    console.log(`⏰ 장 시간 외 (${kstTime.toLocaleString('ko-KR')}) - 스킵`)
+    return
+  }
   
   // 🔒 중복 실행 방지
   const lockKey = 'cron:update-prices:lock'
@@ -392,7 +428,8 @@ async function updateCacheIncremental(cache: StockPriceCache, newPrices: StockPr
     })
     
     cache.lastUpdated = new Date().toISOString()
-    await setCache('stock-prices', cache, 3600)
+    // 72시간 TTL (3일) - 금요일 폐장 후 월요일 개장까지 유지
+    await setCache('stock-prices', cache, 72 * 60 * 60)
   } catch (error) {
     console.error('⚠️ 캐시 업데이트 실패:', error)
   }

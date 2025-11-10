@@ -4,7 +4,7 @@
 
 import { getCache, setCache } from '../lib/redis'
 
-const TOKEN_TTL = 23 * 60 * 60 // 23시간
+const TOKEN_TTL = 24 * 60 * 60 // 24시간 (하루에 1번 발급 원칙)
 
 /**
  * 환경에 따른 캐시 키 생성 (모의계좌/실전계좌 구분)

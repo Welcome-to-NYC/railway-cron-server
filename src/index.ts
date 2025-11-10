@@ -57,7 +57,22 @@ Cron Jobs:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   `)
 
-  // 주식 Cron: 5분마다
+  // 토큰 사전 발급: 매일 08:00 (KST 기준으로 개장 전)
+  cron.schedule('0 23 * * *', async () => {
+    // UTC 23:00 = KST 08:00 (다음날)
+    console.log(`\n[${new Date().toISOString()}] 🔑 한투 토큰 사전 발급`)
+    try {
+      const { getAccessToken } = await import('./services/kis-token')
+      const token = await getAccessToken()
+      if (token) {
+        console.log('✅ 토큰 발급 성공 (개장 전 준비 완료)')
+      }
+    } catch (error) {
+      console.error('토큰 발급 에러:', error)
+    }
+  })
+  
+  // 주식 Cron: 5분마다 (장 시간 체크 포함)
   cron.schedule('*/5 * * * *', async () => {
     console.log(`\n[${ new Date().toISOString()}] 📈 주식 가격 갱신 시작`)
     try {

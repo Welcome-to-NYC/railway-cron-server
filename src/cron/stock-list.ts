@@ -75,37 +75,40 @@ async function fetchKISStocks(market: 'KOSPI' | 'KOSDAQ'): Promise<StockInfo[]> 
     // KOSPI: 뒤 228바이트, KOSDAQ: 뒤 222바이트
     const backLength = market === 'KOSPI' ? 228 : 222
     
-    // Buffer를 줄 단위로 분리 (0x0A = \n)
-    const lines: Buffer[] = []
-    let start = 0
-    for (let i = 0; i < mstContent.length; i++) {
-      if (mstContent[i] === 0x0A) {  // \n
-        lines.push(mstContent.subarray(start, i))
-        start = i + 1
-      }
-    }
-    if (start < mstContent.length) {
-      lines.push(mstContent.subarray(start))
-    }
+    // cp949로 전체 디코딩 후 줄 단위 분리
+    const text = iconv.decode(mstContent, 'cp949')
+    const lines = text.split('\n')
     
     const stocks: StockInfo[] = []
+    let totalLines = 0
+    let stCount = 0
+    let otherCount = 0
     
-    for (const lineBytes of lines) {
-      // 최소 길이 체크
-      if (lineBytes.length < backLength + 21) continue
+    for (const row of lines) {
+      if (row.length < backLength + 21) continue
+      totalLines++
       
-      // 바이트 단위로 정확하게 슬라이싱 (구조체 기반)
-      const codeBytes = lineBytes.subarray(0, 9)                                      // 단축코드
-      const nameBytes = lineBytes.subarray(21, lineBytes.length - backLength)        // 한글명
-      const scrtGrpBytes = lineBytes.subarray(lineBytes.length - backLength, lineBytes.length - backLength + 2)  // 증권그룹구분
+      // Python 코드 그대로: 앞부분과 뒷부분 분리
+      const rf1 = row.substring(0, row.length - backLength)  // 앞부분
+      const rf2 = row.substring(row.length - backLength)     // 뒷부분 (228 or 222)
       
-      // cp949로 디코딩
-      const code = iconv.decode(codeBytes, 'cp949').trim()
-      const name = iconv.decode(nameBytes, 'cp949').trim()
-      const scrtGrpCode = iconv.decode(scrtGrpBytes, 'cp949')
+      // 앞부분 파싱
+      const code = rf1.substring(0, 9).trim()   // 단축코드
+      const name = rf1.substring(21).trim()     // 한글명
+      
+      // 뒷부분 파싱 (field_specs 첫번째: 그룹코드 2자리)
+      const 그룹코드 = rf2.substring(0, 2)
+      
+      // 디버깅 (첫 5개만)
+      if (totalLines <= 5) {
+        console.log(`[${market}] code: ${code}, name: ${name}, 그룹코드: "${그룹코드}"`)
+      }
+      
+      if (그룹코드 === 'ST') stCount++
+      else otherCount++
       
       // 6자리 숫자 코드 + 일반 주식(ST)만 필터링
-      if (/^\d{6}$/.test(code) && name && scrtGrpCode === 'ST') {
+      if (/^\d{6}$/.test(code) && name && 그룹코드 === 'ST') {
         stocks.push({
           code,
           name,
@@ -113,6 +116,8 @@ async function fetchKISStocks(market: 'KOSPI' | 'KOSDAQ'): Promise<StockInfo[]> 
         })
       }
     }
+    
+    console.log(`[${market}] 총 ${totalLines}줄, ST: ${stCount}개, 기타: ${otherCount}개`)
     
     console.log(`✅ ${market} 종목 파싱 완료: ${stocks.length}개`)
     return stocks

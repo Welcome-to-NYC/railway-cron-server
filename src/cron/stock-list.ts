@@ -26,11 +26,7 @@ export async function updateStockList(): Promise<void> {
   try {
     // Python 스크립트 실행
     const scriptPath = path.join(__dirname, '../../scripts/fetch_stocks.py')
-    const { stdout, stderr } = await execAsync(`python3 ${scriptPath}`)
-    
-    if (stderr) {
-      console.error('Python stderr:', stderr)
-    }
+    const { stdout } = await execAsync(`python3 ${scriptPath}`)
     
     // JSON 파싱
     const allStocks: StockInfo[] = JSON.parse(stdout)

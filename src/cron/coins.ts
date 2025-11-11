@@ -64,7 +64,7 @@ export async function updateCoinPrices(): Promise<void> {
     }
     
     const totalBatches = Math.ceil(allRequests.length / RATE_LIMIT_PER_SECOND)
-    console.log(`📊 ${allRequests.length}개 요청 → ${totalBatches}개 배치 (예상: ${totalBatches}초, 50% 최적화!)`)
+    console.log(`📊 ${allRequests.length}개 요청 → ${totalBatches}개 배치`)
     
     // 초당 8개씩 배치 처리 (스마트 대기)
     for (let i = 0; i < allRequests.length; i += RATE_LIMIT_PER_SECOND) {

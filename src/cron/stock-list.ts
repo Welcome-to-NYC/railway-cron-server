@@ -1,10 +1,14 @@
 /**
  * 주식 종목 리스트 갱신
- * KRX에서 전체 종목 리스트를 가져와 Redis에 저장
+ * 한국투자증권 종목 마스터 파일에서 전체 종목 리스트를 가져와 Redis에 저장
  * 매일 1회 실행
  */
 
 import { setCache } from '../lib/redis'
+import * as zlib from 'zlib'
+import { promisify } from 'util'
+
+const gunzip = promisify(zlib.gunzip)
 
 interface StockInfo {
   code: string
@@ -19,9 +23,9 @@ export async function updateStockList(): Promise<void> {
   console.log('📋 종목 리스트 갱신 시작...')
 
   try {
-    // KRX API에서 전종목 데이터 가져오기
-    const kospiStocks = await fetchKRXStocks('KOSPI')
-    const kosdaqStocks = await fetchKRXStocks('KOSDAQ')
+    // 한투 종목 마스터 파일에서 전종목 데이터 가져오기
+    const kospiStocks = await fetchKISStocks('KOSPI')
+    const kosdaqStocks = await fetchKISStocks('KOSDAQ')
 
     const allStocks: StockInfo[] = [...kospiStocks, ...kosdaqStocks]
 
@@ -34,53 +38,61 @@ export async function updateStockList(): Promise<void> {
 
   } catch (error) {
     console.error('❌ 종목 리스트 갱신 실패:', error)
+    throw error
   }
 }
 
 /**
- * KRX API에서 종목 정보 가져오기
+ * 한투 종목 마스터 파일에서 종목 정보 가져오기
  */
-async function fetchKRXStocks(market: 'KOSPI' | 'KOSDAQ'): Promise<StockInfo[]> {
+async function fetchKISStocks(market: 'KOSPI' | 'KOSDAQ'): Promise<StockInfo[]> {
   try {
-    // KRX 오픈 API 사용
-    const marketCode = market === 'KOSPI' ? 'STK' : 'KSQ'
+    const url = market === 'KOSPI'
+      ? 'https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip'
+      : 'https://new.real.download.dws.co.kr/common/master/kosdaq_code.mst.zip'
     
-    const response = await fetch('http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0',
-      },
-      body: new URLSearchParams({
-        'bld': 'dbms/MDC/STAT/standard/MDCSTAT01901',
-        'mktId': marketCode,
-        'share': '1',
-        'csvxls_isNo': 'false',
-      })
-    })
-
+    console.log(`📥 ${market} 종목 마스터 파일 다운로드 중...`)
+    
+    const response = await fetch(url)
+    
     if (!response.ok) {
-      throw new Error(`KRX API 오류: ${response.status}`)
+      throw new Error(`한투 마스터 파일 다운로드 실패: ${response.status}`)
     }
 
-    const data: any = await response.json()
+    const arrayBuffer = await response.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
     
-    // KRX API 응답 형식에 맞게 파싱
-    const stocks: StockInfo[] = data.OutBlock_1?.map((item: any) => ({
-      code: item.ISU_SRT_CD?.padStart(6, '0') || item.SHORT_CODE?.padStart(6, '0'),
-      name: item.ISU_ABBRV || item.ISU_NM,
-      market
-    })) || []
-
-    // 유효한 종목만 필터링 (코드가 6자리 숫자)
-    return stocks.filter(stock => 
-      stock.code && 
-      stock.name && 
-      /^\d{6}$/.test(stock.code)
-    )
+    // ZIP 압축 해제
+    const unzipped = await gunzip(buffer)
+    
+    // .mst 파일 파싱 (cp949 인코딩, 고정폭 텍스트)
+    const text = unzipped.toString('binary')
+    const lines = text.split('\n')
+    
+    const stocks: StockInfo[] = []
+    
+    for (const line of lines) {
+      if (line.length < 21) continue
+      
+      // 고정폭 파싱
+      const code = line.substring(0, 9).trim()  // 종목코드 (9자리)
+      const name = line.substring(21, 40).trim()  // 한글명 (시작 위치 21)
+      
+      // 유효한 종목만 추가 (6자리 숫자 코드)
+      if (/^\d{6}$/.test(code) && name) {
+        stocks.push({
+          code,
+          name,
+          market
+        })
+      }
+    }
+    
+    console.log(`✅ ${market} 종목 파싱 완료: ${stocks.length}개`)
+    return stocks
 
   } catch (error) {
     console.error(`❌ ${market} 종목 조회 실패:`, error)
-    return []
+    throw error
   }
 }

@@ -78,14 +78,15 @@ async function fetchKISStocks(market: 'KOSPI' | 'KOSDAQ'): Promise<StockInfo[]> 
     const stocks: StockInfo[] = []
     
     for (const line of lines) {
-      if (line.length < 21) continue
+      if (line.length < 42) continue
       
       // 고정폭 파싱
       const code = line.substring(0, 9).trim()  // 종목코드 (9자리)
-      const name = line.substring(21, 40).trim()  // 한글명 (시작 위치 21)
+      const name = line.substring(21, 40).trim()  // 한글명 (21-40자리)
+      const scrtGrpCode = line.substring(40, 42)  // 증권그룹구분코드 (40-42자리)
       
-      // 유효한 종목만 추가 (6자리 숫자 코드)
-      if (/^\d{6}$/.test(code) && name) {
+      // 6자리 숫자 코드 + 일반 주식(ST)만 필터링
+      if (/^\d{6}$/.test(code) && name && scrtGrpCode === 'ST') {
         stocks.push({
           code,
           name,

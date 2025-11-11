@@ -7,15 +7,11 @@ RUN apk add --no-cache python3
 # 작업 디렉토리 설정
 WORKDIR /app
 
-# package.json 복사 및 설치
-COPY package*.json ./
-RUN npm ci --only=production
-
-# 소스 코드 복사
+# 소스 코드 전체 복사
 COPY . .
 
-# TypeScript 빌드
-RUN npm run build
+# 의존성 설치 및 빌드
+RUN npm install && npm run build
 
 # 포트 노출
 EXPOSE 3000

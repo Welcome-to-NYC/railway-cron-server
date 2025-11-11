@@ -78,25 +78,30 @@ async function fetchKISStocks(market: 'KOSPI' | 'KOSDAQ'): Promise<StockInfo[]> 
     const stocks: StockInfo[] = []
     
     for (const line of lines) {
-      // KOSPI: 뒤 228자리, KOSDAQ: 뒤 222자리
-      const backLength = market === 'KOSPI' ? 228 : 222
+      if (line.length < 21) continue
       
-      if (line.length < backLength + 21) continue
-      
-      // 고정폭 파싱
+      // 고정폭 파싱 (cp949 인코딩으로 인해 종목명 끝 위치가 가변적)
       const code = line.substring(0, 9).trim()  // 종목코드 (9자리)
-      const frontPartEnd = line.length - backLength
-      const name = line.substring(21, frontPartEnd).trim()  // 한글명
-      const scrtGrpCode = line.substring(frontPartEnd, frontPartEnd + 2)  // 증권그룹구분코드
+      const nameRaw = line.substring(21, 60).trim()  // 한글명 (넉넉하게 추출)
       
-      // 6자리 숫자 코드 + 일반 주식(ST)만 필터링
-      if (/^\d{6}$/.test(code) && name && scrtGrpCode === 'ST') {
-        stocks.push({
-          code,
-          name,
-          market
-        })
-      }
+      // 6자리 숫자 코드만
+      if (!/^\d{6}$/.test(code) || !nameRaw) continue
+      
+      // 종목명에서 공백/특수문자 제거
+      const name = nameRaw.replace(/[\x00-\x1F\x7F-\xFF]+/g, '').trim()
+      
+      if (!name) continue
+      
+      // ETF, ETN, 리츠, 펀드 등 제외 (종목명 기반 필터링)
+      const isExcluded = /ETF|ETN|KODEX|TIGER|KINDEX|ARIRANG|KBSTAR|HANARO|TREX|ACE|SOL|RISE|KOSEF|리츠|부동산|선박|인프라|제\d호|제\d+호/.test(name)
+      
+      if (isExcluded) continue
+      
+      stocks.push({
+        code,
+        name,
+        market
+      })
     }
     
     console.log(`✅ ${market} 종목 파싱 완료: ${stocks.length}개`)

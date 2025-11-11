@@ -5,10 +5,7 @@
  */
 
 import { setCache } from '../lib/redis'
-import * as zlib from 'zlib'
-import { promisify } from 'util'
-
-const gunzip = promisify(zlib.gunzip)
+import AdmZip from 'adm-zip'
 
 interface StockInfo {
   code: string
@@ -63,10 +60,19 @@ async function fetchKISStocks(market: 'KOSPI' | 'KOSDAQ'): Promise<StockInfo[]> 
     const buffer = Buffer.from(arrayBuffer)
     
     // ZIP 압축 해제
-    const unzipped = await gunzip(buffer)
+    const zip = new AdmZip(buffer)
+    const zipEntries = zip.getEntries()
+    
+    if (zipEntries.length === 0) {
+      throw new Error('ZIP 파일이 비어있습니다')
+    }
+    
+    // 첫 번째 파일 (.mst) 읽기
+    const mstFile = zipEntries[0]
+    const mstContent = mstFile.getData()
     
     // .mst 파일 파싱 (cp949 인코딩, 고정폭 텍스트)
-    const text = unzipped.toString('binary')
+    const text = mstContent.toString('binary')
     const lines = text.split('\n')
     
     const stocks: StockInfo[] = []

@@ -144,10 +144,20 @@ async function getStockCodes(): Promise<string[]> {
       market: string
     }
     
-    const stockList = await getCache<StockInfo[]>('stock-list')
+    let stockList = await getCache<StockInfo[]>('stock-list')
     
+    // Fallback: stock-list가 없으면 즉시 가져오기
     if (!stockList || stockList.length === 0) {
-      throw new Error('종목 리스트가 없습니다. stock-list Cron이 실행되었는지 확인하세요.')
+      console.warn('종목 리스트가 Redis에 없습니다. 즉시 KRX에서 가져옵니다...')
+      const { updateStockList } = await import('./stock-list')
+      await updateStockList()
+      
+      // 다시 조회
+      stockList = await getCache<StockInfo[]>('stock-list')
+      
+      if (!stockList || stockList.length === 0) {
+        throw new Error('KRX에서 종목 리스트를 가져오는데 실패했습니다.')
+      }
     }
 
     const codes = stockList.map(stock => stock.code)

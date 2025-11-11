@@ -102,14 +102,26 @@ Cron Jobs:
     }
   })
 
-  // 서버 시작 후 즉시 한 번 실행 (선택사항)
+  // 서버 시작 후 즉시 한 번 실행
   console.log('\n🔄 초기 데이터 갱신 시작...\n')
-  Promise.all([
-    updateStockPrices().catch(console.error),
-    updateCoinPrices().catch(console.error)
-  ]).then(() => {
-    console.log('\n✅ 초기 데이터 갱신 완료\n')
-  })
+  
+  // 1. 종목 리스트 먼저 로드 (필수!)
+  updateStockList()
+    .then(() => {
+      console.log('✅ 종목 리스트 로드 완료\n')
+      
+      // 2. 종목 리스트 로드 후 가격 갱신
+      return Promise.all([
+        updateStockPrices().catch(console.error),
+        updateCoinPrices().catch(console.error)
+      ])
+    })
+    .then(() => {
+      console.log('\n✅ 초기 데이터 갱신 완료\n')
+    })
+    .catch(err => {
+      console.error('❌ 초기 데이터 갱신 실패:', err)
+    })
 })
 
 // Graceful shutdown
